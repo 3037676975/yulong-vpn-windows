@@ -8,6 +8,7 @@ on:
     paths:
       - 'src/**'
       - 'src-tauri/**'
+      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - 'vite.config.ts'
@@ -35,6 +36,12 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate Windows icon
+        shell: pwsh
+        run: |
+          python scripts/create_windows_icon.py 2>&1 | Tee-Object -FilePath icon-generate.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install frontend dependencies
         shell: pwsh
@@ -67,6 +74,7 @@ jobs:
         with:
           name: YulongVPN-Windows-Build-Logs
           path: |
+            icon-generate.log
             npm-install.log
             frontend-build.log
             rust-check.log
