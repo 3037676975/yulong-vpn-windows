@@ -37,10 +37,41 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install frontend dependencies
-        run: npm install
+        shell: pwsh
+        run: |
+          npm install 2>&1 | Tee-Object -FilePath npm-install.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Frontend typecheck and build
+        shell: pwsh
+        run: |
+          npm run build 2>&1 | Tee-Object -FilePath frontend-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Rust compile check
+        shell: pwsh
+        run: |
+          cd src-tauri
+          cargo check 2>&1 | Tee-Object -FilePath ../rust-check.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Windows installer
-        run: npm run tauri:build
+        shell: pwsh
+        run: |
+          npm run tauri:build 2>&1 | Tee-Object -FilePath tauri-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: YulongVPN-Windows-Build-Logs
+          path: |
+            npm-install.log
+            frontend-build.log
+            rust-check.log
+            tauri-build.log
+          if-no-files-found: ignore
 
       - name: Upload Windows bundle
         uses: actions/upload-artifact@v4
