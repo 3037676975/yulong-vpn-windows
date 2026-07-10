@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "玉龙VPN Windows",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "cn.smilechat.yulongvpn.windows",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -29,9 +29,14 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
+    "resources": [
+      "resources/mihomo.exe",
+      "resources/mihomo-version.txt",
+      "resources/THIRD_PARTY_LICENSES.txt"
+    ],
     "publisher": "Yulong VPN",
     "category": "Utility",
     "shortDescription": "玉龙VPN Windows 客户端",
-    "longDescription": "玉龙VPN Windows 客户端，支持动态验证码、公告、到期时间、系统代理和一键连接。"
+    "longDescription": "玉龙VPN Windows 客户端，支持动态密码、公告、到期时间、节点切换、系统代理、托盘和一键连接。"
   }
 }

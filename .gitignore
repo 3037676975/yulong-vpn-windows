@@ -1,6 +1,9 @@
 node_modules/
 dist/
 src-tauri/target/
+src-tauri/resources/mihomo.exe
+src-tauri/resources/mihomo-version.txt
+src-tauri/resources/THIRD_PARTY_LICENSES.txt
 .DS_Store
 *.log
 .env
