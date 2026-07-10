@@ -1,12 +1,13 @@
 param(
-    [string]$OutputDirectory = "src-tauri/resources"
+    [string]$OutputDirectory = "src-tauri/resources",
+    [string]$MihomoVersion = "v1.19.28"
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $repo = "MetaCubeX/mihomo"
-$api = "https://api.github.com/repos/$repo/releases/latest"
+$api = "https://api.github.com/repos/$repo/releases/tags/$MihomoVersion"
 $headers = @{
     "Accept" = "application/vnd.github+json"
     "User-Agent" = "YulongVPN-Windows-Build"
@@ -16,7 +17,7 @@ if ($env:GITHUB_TOKEN) {
     $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
 }
 
-Write-Host "Reading latest official mihomo release..."
+Write-Host "Reading pinned official mihomo release $MihomoVersion..."
 $release = Invoke-RestMethod -Uri $api -Headers $headers
 
 $patterns = @(

@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-本仓库已经初始化为 Tauri + React + Rust 的 Windows 客户端骨架。
+本仓库已经完成 Tauri + React + Rust 的 Windows v1.0.1 功能版。
 
 已完成：
 
@@ -13,7 +13,7 @@ Tauri 配置
 Rust 后端命令
 Windows 系统代理命令
 开机自启插件权限
-托盘图标预留
+托盘图标与快捷连接菜单
 GitHub Actions 自动打包
 PRD
 构建文档
@@ -40,7 +40,7 @@ src-tauri/tauri.conf.json
 
 ## 3. 当前代理核心说明
 
-当前仓库没有提交 mihomo.exe。
+构建时会从官方 MetaCubeX/mihomo v1.19.28 Release 下载并验证核心，再内置进安装包。
 
 原因：
 
@@ -50,13 +50,13 @@ src-tauri/tauri.conf.json
 3. 不应把商业节点或敏感配置写进仓库
 ```
 
-当前代码会寻找：
+安装后程序会自动将内置核心复制到：
 
 ```text
 %APPDATA%/YulongVPN/bin/mihomo.exe
 ```
 
-如果这个文件存在，点击“一键连接”时会用：
+点击“一键连接”时会用：
 
 ```text
 mihomo.exe -f %APPDATA%/YulongVPN/config.yaml
@@ -74,15 +74,7 @@ mihomo.exe -f %APPDATA%/YulongVPN/config.yaml
 
 先确认登录页、主界面、公告、到期时间是否符合预期。
 
-### 第三步：放入 mihomo.exe
-
-把 Windows 版 mihomo core 放到：
-
-```text
-%APPDATA%/YulongVPN/bin/mihomo.exe
-```
-
-### 第四步：测试连接
+### 第三步：测试连接
 
 测试：
 

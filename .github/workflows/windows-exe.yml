@@ -1,5 +1,8 @@
 name: Build Windows Functional EXE
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:
@@ -68,7 +71,7 @@ jobs:
           $noticeText | Set-Content backend-notice.json -Encoding UTF8
           $noticeText | ConvertFrom-Json | Out-Null
 
-          $invalidBody = '{"code":"__windows_ci_invalid__","clientId":"windows-ci","pluginVersion":"windows-v1-functional"}'
+          $invalidBody = '{"code":"__windows_ci_invalid__","clientId":"windows-ci","pluginVersion":"windows-v1.0.1"}'
           $authText = curl.exe -sS --connect-timeout 10 --max-time 20 -H "content-type: application/json" -d $invalidBody "https://api2.smilechat.cn/api/access-code"
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($authText)) {
             throw "Access-code API is unavailable"
@@ -150,6 +153,7 @@ jobs:
 
       - name: Upload build and self-check logs
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: YulongVPN-Windows-Functional-Logs
@@ -171,8 +175,26 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload functional Windows installer
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: YulongVPN-Windows-v1.0.0-Functional
+          name: YulongVPN-Windows-v1.0.1-Functional
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+
+      - name: Publish verified installer as GitHub prerelease
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not generated" }
+          $releaseFile = "YulongVPN-Windows-v1.0.1-Setup.exe"
+          Copy-Item $installer.FullName $releaseFile -Force
+          $tag = "windows-v1.0.1-$env:GITHUB_RUN_NUMBER"
+          gh release create $tag $releaseFile `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "玉龙VPN Windows v1.0.1" `
+            --notes "与 Android v10 共用 api2.smilechat.cn 后台；包含动态密码、公告、到期时间、配置同步、节点切换、Windows 系统代理、托盘、开机自启和内置 mihomo v1.19.28。" `
+            --prerelease
