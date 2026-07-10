@@ -33,7 +33,7 @@ Run workflow
 成功后可在 Releases 长期下载：
 
 ```text
-YulongVPN-Windows-v1.0.1-Setup.exe
+YulongVPN-Windows-v1.0.2-Setup.exe
 ```
 
 里面会包含 Windows 安装包。
@@ -101,7 +101,7 @@ src-tauri/target/release/bundle/msi/*.msi
 5. 看公告和到期时间是否显示
 6. 点击自动更新配置
 7. 点击一键连接
-8. 检查系统代理是否变成 127.0.0.1:7890
+8. 检查系统代理是否变成 127.0.0.1:17890
 9. 点击一键断开
 10. 检查系统代理是否恢复关闭
 ```
