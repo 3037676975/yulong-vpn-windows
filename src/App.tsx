@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
+import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
 
-type AppStatus = 'locked' | 'ready' | 'connecting' | 'connected' | 'disconnected' | 'error';
+type AppStatus = 'checking' | 'locked' | 'ready' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
-type LoginResponse = {
+type SessionResponse = {
   ok: boolean;
+  network_error: boolean;
   expires_at?: string | null;
   message: string;
 };
@@ -13,103 +14,301 @@ type LoginResponse = {
 type NoticeResponse = {
   title: string;
   content: string;
+  url?: string | null;
+};
+
+type BrandingResponse = {
+  logo_url?: string | null;
 };
 
 type ConnectResponse = {
   ok: boolean;
   status: string;
   nodes: string[];
+  current_node?: string | null;
+  group?: string | null;
+  config_updated_at?: number | null;
+  message: string;
+};
+
+type NodeSelectionResponse = {
+  ok: boolean;
+  current_node: string;
+  message: string;
+};
+
+type AppStateResponse = {
+  logged_in: boolean;
+  connected: boolean;
+  system_proxy: boolean;
+  expires_at?: string | null;
+  nodes: string[];
+  current_node?: string | null;
+  group?: string | null;
+  config_updated_at?: number | null;
+  core_version?: string | null;
+};
+
+type SelfCheckResponse = {
+  ok: boolean;
+  core_ready: boolean;
+  backend_ready: boolean;
+  core_version?: string | null;
   message: string;
 };
 
 const defaultNotice: NoticeResponse = {
-  title: '欢迎使用玉龙VPN Windows',
-  content: '输入动态验证码后即可进入主界面，一键连接电脑端代理。',
+  title: '系统公告',
+  content: '正在同步玉龙VPN后台公告，请稍候…',
 };
+
+function BrandLogo({ url, compact = false }: { url?: string | null; compact?: boolean }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => setFailed(false), [url]);
+
+  return (
+    <div className={compact ? 'mini-logo' : 'brand-logo'}>
+      {url && !failed ? (
+        <img src={url} alt="玉龙VPN Logo" onError={() => setFailed(true)} />
+      ) : (
+        <span>玉</span>
+      )}
+    </div>
+  );
+}
+
+function formatExpiry(value?: string | null) {
+  if (!value) return '后台未返回到期时间';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function formatUpdatedAt(value?: number | null) {
+  if (!value) return '尚未更新';
+  return new Date(value * 1000).toLocaleString('zh-CN', { hour12: false });
+}
 
 export default function App() {
   const [code, setCode] = useState('');
-  const [status, setStatus] = useState<AppStatus>('locked');
-  const [message, setMessage] = useState('请输入动态验证码登录');
-  const [expiresAt, setExpiresAt] = useState<string>('未登录');
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [status, setStatus] = useState<AppStatus>('checking');
+  const [message, setMessage] = useState('正在检查客户端与后台状态…');
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeResponse>(defaultNotice);
-  const [nodes, setNodes] = useState<string[]>(['自动选择']);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [nodes, setNodes] = useState<string[]>([]);
+  const [currentNode, setCurrentNode] = useState<string | null>(null);
+  const [group, setGroup] = useState<string | null>(null);
   const [systemProxy, setSystemProxy] = useState(false);
   const [autoStart, setAutoStart] = useState(false);
-
-  const loggedIn = status !== 'locked';
+  const [configUpdatedAt, setConfigUpdatedAt] = useState<number | null>(null);
+  const [coreVersion, setCoreVersion] = useState<string | null>(null);
+  const [selfCheckOk, setSelfCheckOk] = useState(false);
+  const [busyNode, setBusyNode] = useState<string | null>(null);
 
   const statusText = useMemo(() => {
     switch (status) {
+      case 'checking': return '正在自检';
       case 'locked': return '未登录';
       case 'ready': return '已登录，未连接';
       case 'connecting': return '连接中';
       case 'connected': return '已连接';
       case 'disconnected': return '已断开';
-      case 'error': return '异常';
+      case 'error': return '连接异常';
       default: return '未知状态';
     }
   }, [status]);
 
-  useEffect(() => {
-    isEnabled()
-      .then(setAutoStart)
-      .catch(() => setAutoStart(false));
+  function applyConnectionResponse(res: ConnectResponse) {
+    setNodes(res.nodes || []);
+    setCurrentNode(res.current_node || null);
+    setGroup(res.group || null);
+    setConfigUpdatedAt(res.config_updated_at || null);
+    setSystemProxy(res.status === 'connected');
+    setStatus(res.status === 'connected' ? 'connected' : 'ready');
+    setMessage(res.message);
+  }
 
-    invoke<NoticeResponse>('fetch_notice')
-      .then(setNotice)
-      .catch(() => setNotice(defaultNotice));
+  function forceLogout(reason: string) {
+    setLoggedIn(false);
+    setStatus('locked');
+    setSystemProxy(false);
+    setCurrentNode(null);
+    setNodes([]);
+    setExpiresAt(null);
+    setMessage(reason);
+  }
+
+  async function refreshState() {
+    try {
+      const state = await invoke<AppStateResponse>('get_app_state');
+      setSystemProxy(state.system_proxy);
+      setNodes(state.nodes || []);
+      setCurrentNode(state.current_node || null);
+      setGroup(state.group || null);
+      setConfigUpdatedAt(state.config_updated_at || null);
+      setCoreVersion(state.core_version || null);
+      if (state.expires_at) setExpiresAt(state.expires_at);
+      if (state.connected) {
+        setStatus('connected');
+      } else {
+        setStatus((old) => old === 'connected' ? 'error' : old);
+      }
+    } catch {
+      // 状态轮询失败不打断当前界面。
+    }
+  }
+
+  async function refreshConfig(silent = false) {
+    if (!silent) setMessage('正在从后台更新配置…');
+    try {
+      const res = await invoke<ConnectResponse>('refresh_config');
+      applyConnectionResponse(res);
+      if (silent) setMessage('配置已自动同步');
+    } catch (err) {
+      const text = String(err);
+      if (text.includes('重新登录') || text.includes('已失效')) {
+        forceLogout(text);
+      } else {
+        setStatus('error');
+        setMessage(`更新配置失败：${text}`);
+      }
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      const [noticeResult, brandingResult, autoStartResult, checkResult] = await Promise.allSettled([
+        invoke<NoticeResponse>('fetch_notice'),
+        invoke<BrandingResponse>('fetch_branding'),
+        isEnabled(),
+        invoke<SelfCheckResponse>('self_check'),
+      ]);
+
+      if (cancelled) return;
+      if (noticeResult.status === 'fulfilled') setNotice(noticeResult.value);
+      if (brandingResult.status === 'fulfilled') setLogoUrl(brandingResult.value.logo_url || null);
+      if (autoStartResult.status === 'fulfilled') setAutoStart(autoStartResult.value);
+      if (checkResult.status === 'fulfilled') {
+        setSelfCheckOk(checkResult.value.ok);
+        setCoreVersion(checkResult.value.core_version || null);
+        if (!checkResult.value.ok) setMessage(checkResult.value.message);
+      }
+
+      try {
+        const session = await invoke<SessionResponse>('restore_session');
+        if (cancelled) return;
+        if (session.ok) {
+          setLoggedIn(true);
+          setExpiresAt(session.expires_at || null);
+          setStatus('ready');
+          setMessage('登录状态已恢复，正在同步配置…');
+          await refreshConfig(true);
+        } else {
+          setStatus('locked');
+          setMessage(session.network_error ? '后台网络异常，暂时无法恢复登录' : '请输入动态密码登录');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setStatus('locked');
+          setMessage(`启动检查失败：${String(err)}`);
+        }
+      }
+    }
+
+    bootstrap();
+    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+
+    const authTimer = window.setInterval(async () => {
+      try {
+        const session = await invoke<SessionResponse>('check_session');
+        if (session.ok) {
+          setExpiresAt(session.expires_at || null);
+          return;
+        }
+        if (session.network_error) {
+          setStatus('error');
+          setSystemProxy(false);
+          setMessage('网络异常，已暂停代理，恢复网络后会继续验证');
+        } else {
+          forceLogout('后台密码已修改或账号已失效，请重新登录');
+        }
+      } catch (err) {
+        setStatus('error');
+        setMessage(`登录状态检查失败：${String(err)}`);
+      }
+    }, 30_000);
+
+    const stateTimer = window.setInterval(refreshState, 5_000);
+    return () => {
+      window.clearInterval(authTimer);
+      window.clearInterval(stateTimer);
+    };
+  }, [loggedIn]);
 
   async function login() {
     const clean = code.trim();
-    if (!/^\d{4,12}$/.test(clean)) {
-      setMessage('请输入正确的动态验证码');
+    if (clean.length < 4) {
+      setMessage('请输入正确的动态密码');
       return;
     }
 
-    setMessage('正在验证动态验证码...');
+    setStatus('checking');
+    setMessage('正在验证动态密码…');
     try {
-      const res = await invoke<LoginResponse>('login_access_code', { code: clean });
+      const res = await invoke<SessionResponse>('login_access_code', { code: clean });
       if (!res.ok) {
         setStatus('locked');
-        setMessage(res.message || '密码错误或已过期');
+        setMessage(res.message || '动态密码错误或已过期');
         return;
       }
 
+      setCode('');
+      setLoggedIn(true);
+      setExpiresAt(res.expires_at || null);
       setStatus('ready');
-      setExpiresAt(res.expires_at || '后台未返回到期时间');
-      setMessage('登录成功，可以连接');
+      setMessage('登录成功，正在同步配置…');
+      await refreshConfig(true);
     } catch (err) {
-      setStatus('error');
+      setStatus('locked');
       setMessage(`登录失败：${String(err)}`);
     }
   }
 
   async function connect() {
-    if (!code.trim()) return;
     setStatus('connecting');
-    setMessage('正在下载配置并启动代理核心...');
-
+    setMessage('正在验证登录、启动 mihomo 并检查本地代理端口…');
     try {
-      const res = await invoke<ConnectResponse>('connect_proxy', { code: code.trim() });
-      setNodes(res.nodes.length ? res.nodes : ['自动选择']);
+      const res = await invoke<ConnectResponse>('connect_proxy');
+      applyConnectionResponse(res);
       setSystemProxy(true);
-      setStatus(res.ok ? 'connected' : 'error');
-      setMessage(res.message);
     } catch (err) {
-      setStatus('error');
-      setMessage(`连接失败：${String(err)}`);
+      const text = String(err);
+      if (text.includes('重新登录') || text.includes('已失效')) {
+        forceLogout(text);
+      } else {
+        setSystemProxy(false);
+        setStatus('error');
+        setMessage(`连接失败：${text}`);
+      }
     }
   }
 
   async function disconnect() {
-    setMessage('正在断开连接...');
+    setMessage('正在关闭系统代理和代理核心…');
     try {
       const res = await invoke<ConnectResponse>('disconnect_proxy');
+      applyConnectionResponse(res);
       setSystemProxy(false);
       setStatus('disconnected');
-      setMessage(res.message);
     } catch (err) {
       setStatus('error');
       setMessage(`断开失败：${String(err)}`);
@@ -121,7 +320,7 @@ export default function App() {
       const next = !systemProxy;
       await invoke('set_system_proxy', { enabled: next });
       setSystemProxy(next);
-      setMessage(next ? '系统代理已开启' : '系统代理已关闭');
+      setMessage(next ? 'Windows 系统代理已开启' : 'Windows 系统代理已关闭');
     } catch (err) {
       setMessage(`系统代理切换失败：${String(err)}`);
     }
@@ -143,15 +342,29 @@ export default function App() {
     }
   }
 
-  async function refreshConfig() {
-    if (!code.trim()) return;
-    setMessage('正在自动更新配置...');
+  async function chooseNode(node: string) {
+    if (status !== 'connected') {
+      setMessage('请先连接后再切换节点');
+      return;
+    }
+    setBusyNode(node);
+    setMessage(`正在切换到：${node}…`);
     try {
-      const res = await invoke<ConnectResponse>('refresh_config', { code: code.trim() });
-      setNodes(res.nodes.length ? res.nodes : ['自动选择']);
+      const res = await invoke<NodeSelectionResponse>('select_node', { node });
+      setCurrentNode(res.current_node);
       setMessage(res.message);
     } catch (err) {
-      setMessage(`更新配置失败：${String(err)}`);
+      setMessage(`节点切换失败：${String(err)}`);
+    } finally {
+      setBusyNode(null);
+    }
+  }
+
+  async function logout() {
+    try {
+      await invoke('logout');
+    } finally {
+      forceLogout('已退出登录，请输入动态密码');
     }
   }
 
@@ -159,21 +372,35 @@ export default function App() {
     return (
       <main className="login-shell">
         <section className="login-card glass">
-          <div className="brand-logo">玉</div>
+          <BrandLogo url={logoUrl} />
           <h1>玉龙VPN Windows</h1>
-          <p className="muted">输入动态验证码后进入电脑端控制台</p>
+          <p className="muted">输入后台动态密码后进入电脑端控制台</p>
+
+          <div className="login-notice">
+            <strong>{notice.title}</strong>
+            <p>{notice.content}</p>
+          </div>
 
           <input
             className="code-input"
             value={code}
             onChange={(event) => setCode(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && login()}
-            placeholder="请输入动态验证码"
+            placeholder="请输入动态密码"
+            type="password"
+            inputMode="numeric"
+            disabled={status === 'checking'}
             autoFocus
           />
 
-          <button className="primary" onClick={login}>登录</button>
+          <button className="primary login-button" onClick={login} disabled={status === 'checking'}>
+            {status === 'checking' ? '正在验证…' : '验证并进入'}
+          </button>
           <p className="message">{message}</p>
+          <div className={selfCheckOk ? 'health healthy' : 'health'}>
+            <span />
+            {selfCheckOk ? '客户端核心与后台正常' : '正在检查客户端核心'}
+          </div>
         </section>
       </main>
     );
@@ -183,19 +410,24 @@ export default function App() {
     <main className="app-shell">
       <aside className="side glass">
         <div className="side-brand">
-          <div className="mini-logo">玉</div>
+          <BrandLogo url={logoUrl} compact />
           <div>
             <strong>玉龙VPN</strong>
-            <span>Windows Client</span>
+            <span>Windows 1.0</span>
           </div>
         </div>
 
         <nav>
-          <button className="nav-active">控制台</button>
-          <button>节点列表</button>
-          <button>系统代理</button>
-          <button>设置</button>
+          <button className="nav-active">连接控制台</button>
+          <button onClick={() => document.querySelector('.node-card')?.scrollIntoView({ behavior: 'smooth' })}>节点列表</button>
+          <button onClick={refreshState}>刷新状态</button>
+          <button className="logout-nav" onClick={logout}>退出登录</button>
         </nav>
+
+        <div className="side-meta">
+          <span>代理核心</span>
+          <strong>{coreVersion || '正在检测'}</strong>
+        </div>
       </aside>
 
       <section className="content">
@@ -204,26 +436,29 @@ export default function App() {
             <p className="muted">当前状态</p>
             <h2>{statusText}</h2>
           </div>
-          <div className={`status-dot ${status}`} />
+          <div className="top-actions">
+            <span className="current-node-pill">{currentNode || '自动选择'}</span>
+            <div className={`status-dot ${status}`} />
+          </div>
         </header>
 
         <section className="grid">
           <div className="card glass hero-card">
-            <p className="muted">一键连接</p>
+            <p className="muted">一键安全连接</p>
             <h1>{status === 'connected' ? '网络保护中' : '准备连接'}</h1>
             <p>{message}</p>
             <div className="button-row">
-              <button className="primary" onClick={connect} disabled={status === 'connecting'}>
-                一键连接
+              <button className="primary" onClick={connect} disabled={status === 'connecting' || status === 'connected'}>
+                {status === 'connecting' ? '连接中…' : '一键连接'}
               </button>
               <button className="ghost" onClick={disconnect}>一键断开</button>
             </div>
           </div>
 
-          <div className="card glass">
+          <div className="card glass expiry-card">
             <p className="muted">到期时间</p>
-            <h3>{expiresAt}</h3>
-            <p>此时间来自后台动态验证码接口。</p>
+            <h3>{formatExpiry(expiresAt)}</h3>
+            <p>后台密码变更后，客户端会在 30 秒内自动断开并退回登录页。</p>
           </div>
 
           <div className="card glass notice-card">
@@ -233,7 +468,7 @@ export default function App() {
           </div>
 
           <div className="card glass">
-            <p className="muted">快捷开关</p>
+            <p className="muted">快捷设置</p>
             <div className="switch-line">
               <span>系统代理</span>
               <button className={systemProxy ? 'switch on' : 'switch'} onClick={toggleSystemProxy}>
@@ -246,25 +481,40 @@ export default function App() {
                 {autoStart ? '已开' : '已关'}
               </button>
             </div>
-            <button className="ghost full" onClick={refreshConfig}>自动更新配置</button>
+            <button className="ghost full" onClick={() => refreshConfig(false)}>立即更新配置</button>
+            <p className="config-time">上次更新：{formatUpdatedAt(configUpdatedAt)}</p>
           </div>
 
           <div className="card glass node-card">
             <div className="node-head">
               <div>
                 <p className="muted">节点列表</p>
-                <h3>自动选择节点</h3>
+                <h3>{group || '自动选择节点'}</h3>
               </div>
               <span>{nodes.length} 个</span>
             </div>
-            <ul>
-              {nodes.map((node) => (
-                <li key={node}>
-                  <span>{node}</span>
-                  <em>可用</em>
-                </li>
-              ))}
-            </ul>
+
+            {nodes.length ? (
+              <div className="node-grid">
+                {nodes.map((node) => {
+                  const selected = currentNode === node || (!currentNode && node === '自动选择');
+                  return (
+                    <button
+                      type="button"
+                      className={selected ? 'node-option selected' : 'node-option'}
+                      key={node}
+                      onClick={() => chooseNode(node)}
+                      disabled={busyNode !== null}
+                    >
+                      <span>{node}</span>
+                      <em>{busyNode === node ? '切换中' : selected ? '当前' : '选择'}</em>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-nodes">更新配置后将在这里显示后台节点。</div>
+            )}
           </div>
         </section>
       </section>
