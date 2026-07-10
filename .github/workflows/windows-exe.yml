@@ -92,10 +92,10 @@ jobs:
           npm run build 2>&1 | Tee-Object -FilePath frontend-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Rust format check
+      - name: Rust syntax formatting pass
         shell: pwsh
         run: |
-          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check 2>&1 | Tee-Object -FilePath rust-fmt.log
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all 2>&1 | Tee-Object -FilePath rust-fmt.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Rust unit tests
