@@ -19,7 +19,7 @@ Actions
 选择：
 
 ```text
-Build Windows EXE
+Build Windows Functional EXE
 ```
 
 点击：
@@ -30,10 +30,10 @@ Run workflow
 
 等待绿色成功。
 
-成功后在 Artifacts 下载：
+成功后可在 Releases 长期下载：
 
 ```text
-YulongVPN-Windows-Bundle
+YulongVPN-Windows-v1.0.1-Setup.exe
 ```
 
 里面会包含 Windows 安装包。
@@ -106,14 +106,6 @@ src-tauri/target/release/bundle/msi/*.msi
 10. 检查系统代理是否恢复关闭
 ```
 
-## 5. 接入 mihomo.exe
+## 5. mihomo 核心
 
-当前仓库不内置 mihomo.exe。
-
-测试时需要手动放到：
-
-```text
-%APPDATA%/YulongVPN/bin/mihomo.exe
-```
-
-后续可以改成安装包内置 sidecar，但要注意上游协议和文件体积。
+构建流程固定下载官方 MetaCubeX/mihomo v1.19.28 Windows amd64 版本，验证文件大小和版本后内置到安装包，无需用户手动放置。

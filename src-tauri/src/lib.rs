@@ -2,6 +2,8 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
+#[cfg(windows)]
+use std::ffi::c_void;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
@@ -20,6 +22,40 @@ const LOCAL_PROXY_HOST: &str = "127.0.0.1";
 const LOCAL_PROXY_PORT: u16 = 7890;
 const CONTROLLER_PORT: u16 = 9090;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(windows)]
+#[link(name = "wininet")]
+extern "system" {
+    fn InternetSetOptionW(
+        internet: *mut c_void,
+        option: u32,
+        buffer: *mut c_void,
+        buffer_length: u32,
+    ) -> i32;
+}
+
+#[cfg(windows)]
+fn notify_windows_proxy_changed() {
+    const INTERNET_OPTION_REFRESH: u32 = 37;
+    const INTERNET_OPTION_SETTINGS_CHANGED: u32 = 39;
+    unsafe {
+        InternetSetOptionW(
+            std::ptr::null_mut(),
+            INTERNET_OPTION_SETTINGS_CHANGED,
+            std::ptr::null_mut(),
+            0,
+        );
+        InternetSetOptionW(
+            std::ptr::null_mut(),
+            INTERNET_OPTION_REFRESH,
+            std::ptr::null_mut(),
+            0,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn notify_windows_proxy_changed() {}
 
 static CORE_PROCESS: Lazy<Mutex<Option<Child>>> = Lazy::new(|| Mutex::new(None));
 static ACTIVE_CODE: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
@@ -239,6 +275,7 @@ fn set_windows_proxy(enabled: bool) -> Result<(), String> {
     } else {
         reg_add("ProxyEnable", "REG_DWORD", "0")?;
     }
+    notify_windows_proxy_changed();
     Ok(())
 }
 
@@ -312,8 +349,9 @@ async fn verify_access_code(code: &str) -> AuthResult {
         .json(&serde_json::json!({
             "code": code,
             "clientId": "windows",
-            "pluginVersion": "windows-v1-functional"
+            "pluginVersion": "windows-v1.0.1"
         }))
+        .timeout(Duration::from_secs(12))
         .send()
         .await
     {
@@ -545,6 +583,7 @@ async fn download_config(code: &str) -> Result<(String, ConfigInfo), String> {
 
     let response = reqwest::Client::new()
         .get(url)
+        .timeout(Duration::from_secs(15))
         .send()
         .await
         .map_err(|err| format!("请求配置失败：{err}"))?;
@@ -762,7 +801,10 @@ async fn connect_internal(app: AppHandle) -> Result<ConnectResponse, String> {
         });
     }
 
-    set_windows_proxy(true)?;
+    if let Err(err) = set_windows_proxy(true) {
+        stop_core();
+        return Err(err);
+    }
     let current_node = controller_current_node().await.or_else(|| {
         if info.auto_target.is_some() {
             Some("自动选择".to_string())
@@ -909,6 +951,7 @@ async fn logout() -> Result<(), String> {
 async fn fetch_notice() -> Result<NoticeResponse, String> {
     let response = reqwest::Client::new()
         .get(format!("{API_BASE}/api/notices?public=1"))
+        .timeout(Duration::from_secs(10))
         .send()
         .await
         .map_err(|err| format!("获取公告失败：{err}"))?;
@@ -937,6 +980,7 @@ async fn fetch_notice() -> Result<NoticeResponse, String> {
 async fn fetch_branding() -> Result<BrandingResponse, String> {
     let root: JsonValue = match reqwest::Client::new()
         .get(format!("{API_BASE}/api/app-branding"))
+        .timeout(Duration::from_secs(10))
         .send()
         .await
     {
@@ -978,7 +1022,10 @@ async fn refresh_config(app: AppHandle) -> Result<ConnectResponse, String> {
             disconnect_internal();
             return Err("配置更新后代理核心重启失败".to_string());
         }
-        set_windows_proxy(true)?;
+        if let Err(err) = set_windows_proxy(true) {
+            disconnect_internal();
+            return Err(err);
+        }
         current_node = controller_current_node().await.or(current_node);
     }
 

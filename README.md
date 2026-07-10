@@ -39,17 +39,17 @@ GET /api/clash-config?code=验证码 下载配置
 
 | 功能 | 当前状态 | 说明 |
 |---|---|---|
-| 登录动态验证码 | ✅ 骨架已写 | 登录页只输入密码，成功后进入主界面 |
-| 显示到期时间 | ✅ 骨架已写 | 读取后台 `expiresAt` |
-| 显示后台公告 | ✅ 骨架已写 | 请求 `/api/notices?public=1` |
-| 一键连接 | ✅ 骨架已写 | 下载配置、启动核心、开启系统代理 |
-| 一键断开 | ✅ 骨架已写 | 关闭系统代理、停止核心进程 |
-| 节点列表 | ✅ UI 已预留 | 后续从 Clash YAML 解析节点 |
-| 自动选择节点 | ✅ UI 已预留 | 第一版先显示自动选择，后续接策略组 |
-| 系统代理开关 | ✅ Rust 命令预留 | Windows 注册表方式开关系统代理 |
-| 开机自启 | ✅ Tauri 插件预留 | 使用 Tauri autostart 插件 |
-| 托盘图标 | ✅ Tauri 预留 | 后续可最小化到托盘 |
-| 自动更新配置 | ✅ 骨架已写 | 登录后重新拉取 clash-config |
+| 登录动态验证码 | ✅ 已完成 | 登录页只输入密码，成功后进入主界面 |
+| 显示到期时间 | ✅ 已完成 | 读取后台 `expiresAt` |
+| 显示后台公告 | ✅ 已完成 | 请求 `/api/notices?public=1` |
+| 一键连接 | ✅ 已完成 | 下载配置、启动核心、开启系统代理 |
+| 一键断开 | ✅ 已完成 | 关闭系统代理、停止核心进程 |
+| 节点列表 | ✅ 已完成 | 从 Clash YAML 解析节点并支持切换 |
+| 自动选择节点 | ✅ 已完成 | 对接 mihomo 策略组控制接口 |
+| 系统代理开关 | ✅ 已完成 | Windows 注册表 + WinINet 即时刷新 |
+| 开机自启 | ✅ 已完成 | 使用 Tauri autostart 插件 |
+| 托盘图标 | ✅ 已完成 | 支持显示、连接、断开和退出 |
+| 自动更新配置 | ✅ 已完成 | 登录后重新拉取 clash-config |
 | 软件内状态 | ✅ UI 已写 | 未登录、已登录、连接中、已连接、已断开 |
 
 ---
@@ -91,7 +91,7 @@ Content-Type: application/json
 {
   "code": "888777",
   "clientId": "windows",
-  "pluginVersion": "windows-v1"
+  "pluginVersion": "windows-v1.0.1"
 }
 ```
 
@@ -195,7 +195,7 @@ Actions
 选择：
 
 ```text
-Build Windows EXE
+Build Windows Functional EXE
 ```
 
 点：
@@ -204,7 +204,7 @@ Build Windows EXE
 Run workflow
 ```
 
-成功后在 Artifacts 里下载 Windows 安装包。
+成功后在 Releases 长期下载 `YulongVPN-Windows-v1.0.1-Setup.exe`。
 
 ---
 
@@ -287,15 +287,13 @@ Windows 系统代理 / mihomo core
 
 ## 11. 当前交接说明
 
-这个仓库当前是 Windows 客户端第一版骨架。下一步重点：
+这个仓库当前已经完成 Windows v1.0.1 系统代理功能版。后续重点：
 
 ```text
-1. 确认 UI 是否满意
-2. 接入真实 mihomo Windows core
-3. 测试系统代理开关
-4. 解析节点列表
-5. GitHub Actions 产出第一个 EXE
-6. 真机 Windows 安装测试
+1. Windows 10 / 11 真机安装与连接回归
+2. 代码签名，减少未知发布者提示
+3. 根据实际需求评估 v2 TUN 全局模式
+4. 增加版本更新提示
 ```
 
 ---
