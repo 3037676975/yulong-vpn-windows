@@ -19,8 +19,11 @@ use tauri::{
 
 const API_BASE: &str = "https://api2.smilechat.cn";
 const LOCAL_PROXY_HOST: &str = "127.0.0.1";
-const LOCAL_PROXY_PORT: u16 = 7890;
-const CONTROLLER_PORT: u16 = 9090;
+// Use app-specific ports instead of the Clash defaults. 7890/9090 are commonly
+// occupied by another proxy client, which made a valid mihomo configuration
+// look like a startup failure on real Windows machines.
+const LOCAL_PROXY_PORT: u16 = 17_890;
+const CONTROLLER_PORT: u16 = 19_090;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[cfg(windows)]
@@ -269,7 +272,11 @@ fn reg_add(name: &str, value_type: &str, value: &str) -> Result<(), String> {
 
 fn set_windows_proxy(enabled: bool) -> Result<(), String> {
     if enabled {
-        reg_add("ProxyServer", "REG_SZ", "127.0.0.1:7890")?;
+        reg_add(
+            "ProxyServer",
+            "REG_SZ",
+            &format!("127.0.0.1:{LOCAL_PROXY_PORT}"),
+        )?;
         reg_add("ProxyOverride", "REG_SZ", "<local>")?;
         reg_add("ProxyEnable", "REG_DWORD", "1")?;
     } else {
@@ -349,7 +356,7 @@ async fn verify_access_code(code: &str) -> AuthResult {
         .json(&serde_json::json!({
             "code": code,
             "clientId": "windows",
-            "pluginVersion": "windows-v1.0.1"
+            "pluginVersion": "windows-v1.0.2"
         }))
         .timeout(Duration::from_secs(12))
         .send()
@@ -424,12 +431,15 @@ fn json_string(value: &JsonValue, keys: &[&str]) -> Option<String> {
 fn normalize_config(input: &str) -> String {
     let mut output = input.to_string();
     for (key, value) in [
-        ("mixed-port", "7890"),
-        ("external-controller", "127.0.0.1:9090"),
-        ("allow-lan", "false"),
-        ("secret", "\"\""),
+        ("mixed-port", LOCAL_PROXY_PORT.to_string()),
+        (
+            "external-controller",
+            format!("127.0.0.1:{CONTROLLER_PORT}"),
+        ),
+        ("allow-lan", "false".to_string()),
+        ("secret", "\"\"".to_string()),
     ] {
-        output = upsert_top_level(&output, key, value);
+        output = upsert_top_level(&output, key, &value);
     }
     output
 }
@@ -708,7 +718,8 @@ fn start_core(app: &AppHandle) -> Result<(), String> {
     let log_path = core_log_path()?;
     let log = OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(true)
         .open(log_path)
         .map_err(|err| format!("创建核心日志失败：{err}"))?;
     let log_error = log
@@ -743,6 +754,23 @@ async fn wait_for_port(port: u16, attempts: usize) -> bool {
     for _ in 0..attempts {
         if TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok() {
             return true;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    false
+}
+
+async fn wait_for_core_ready() -> bool {
+    // The first start may need to initialise rule/geodata state. Keep waiting
+    // while the process is alive, but stop immediately if mihomo exits.
+    for _ in 0..120 {
+        let proxy_ready = wait_for_port(LOCAL_PROXY_PORT, 1).await;
+        let controller_ready = wait_for_port(CONTROLLER_PORT, 1).await;
+        if proxy_ready && controller_ready {
+            return core_is_running();
+        }
+        if !core_is_running() {
+            return false;
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
@@ -789,9 +817,7 @@ async fn connect_internal(app: AppHandle) -> Result<ConnectResponse, String> {
     let (_, info) = download_config(&code).await?;
 
     start_core(&app)?;
-    let proxy_ready = wait_for_port(LOCAL_PROXY_PORT, 40).await;
-    let controller_ready = wait_for_port(CONTROLLER_PORT, 40).await;
-    if !proxy_ready || !controller_ready || !core_is_running() {
+    if !wait_for_core_ready().await {
         let detail = tail_core_log();
         disconnect_internal();
         return Err(if detail.is_empty() {
@@ -829,7 +855,10 @@ async fn connect_internal(app: AppHandle) -> Result<ConnectResponse, String> {
 
 async fn controller_current_node() -> Option<String> {
     let group = ACTIVE_GROUP.lock().ok().and_then(|value| value.clone())?;
-    let mut url = reqwest::Url::parse("http://127.0.0.1:9090/proxies/").ok()?;
+    let mut url = reqwest::Url::parse(&format!(
+        "http://127.0.0.1:{CONTROLLER_PORT}/proxies/"
+    ))
+    .ok()?;
     url.path_segments_mut().ok()?.push(&group);
     let value: JsonValue = reqwest::Client::new()
         .get(url)
@@ -1018,7 +1047,7 @@ async fn refresh_config(app: AppHandle) -> Result<ConnectResponse, String> {
     if was_connected {
         stop_core();
         start_core(&app)?;
-        if !wait_for_port(LOCAL_PROXY_PORT, 40).await || !wait_for_port(CONTROLLER_PORT, 40).await {
+        if !wait_for_core_ready().await {
             disconnect_internal();
             return Err("配置更新后代理核心重启失败".to_string());
         }
@@ -1096,7 +1125,9 @@ async fn select_node(node: String) -> Result<NodeSelectionResponse, String> {
         node.clone()
     };
 
-    let mut url = reqwest::Url::parse("http://127.0.0.1:9090/proxies/")
+    let mut url = reqwest::Url::parse(&format!(
+        "http://127.0.0.1:{CONTROLLER_PORT}/proxies/"
+    ))
         .map_err(|err| format!("控制地址异常：{err}"))?;
     url.path_segments_mut()
         .map_err(|_| "控制地址异常".to_string())?
@@ -1260,8 +1291,8 @@ mod tests {
     fn adds_required_local_ports() {
         let config = "proxies:\n  - name: A\n    type: ss\nproxy-groups: []\n";
         let normalized = normalize_config(config);
-        assert!(normalized.contains("mixed-port: 7890"));
-        assert!(normalized.contains("external-controller: 127.0.0.1:9090"));
+        assert!(normalized.contains("mixed-port: 17890"));
+        assert!(normalized.contains("external-controller: 127.0.0.1:19090"));
         assert!(normalized.contains("allow-lan: false"));
     }
 

@@ -28,7 +28,7 @@ GET /api/clash-config?code=验证码 下载配置
   ↓
 启动本地 mihomo / Clash core
   ↓
-设置 Windows 系统代理 127.0.0.1:7890
+设置 Windows 系统代理 127.0.0.1:17890
   ↓
 一键连接成功
 ```
@@ -91,7 +91,7 @@ Content-Type: application/json
 {
   "code": "888777",
   "clientId": "windows",
-  "pluginVersion": "windows-v1.0.1"
+  "pluginVersion": "windows-v1.0.2"
 }
 ```
 
@@ -204,7 +204,7 @@ Build Windows Functional EXE
 Run workflow
 ```
 
-成功后在 Releases 长期下载 `YulongVPN-Windows-v1.0.1-Setup.exe`。
+成功后在 Releases 长期下载 `YulongVPN-Windows-v1.0.2-Setup.exe`。
 
 ---
 
@@ -287,7 +287,7 @@ Windows 系统代理 / mihomo core
 
 ## 11. 当前交接说明
 
-这个仓库当前已经完成 Windows v1.0.1 系统代理功能版。后续重点：
+这个仓库当前已经完成 Windows v1.0.2 系统代理功能版。后续重点：
 
 ```text
 1. Windows 10 / 11 真机安装与连接回归

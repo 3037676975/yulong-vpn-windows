@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
+import yulongLogo from '../src-tauri/icons/icon.ico';
 
 type AppStatus = 'checking' | 'locked' | 'ready' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -62,18 +63,10 @@ const defaultNotice: NoticeResponse = {
   content: '正在同步玉龙VPN后台公告，请稍候…',
 };
 
-function BrandLogo({ url, compact = false }: { url?: string | null; compact?: boolean }) {
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => setFailed(false), [url]);
-
+function BrandLogo({ compact = false }: { url?: string | null; compact?: boolean }) {
   return (
     <div className={compact ? 'mini-logo' : 'brand-logo'}>
-      {url && !failed ? (
-        <img src={url} alt="玉龙VPN Logo" onError={() => setFailed(true)} />
-      ) : (
-        <span>玉</span>
-      )}
+      <img src={yulongLogo} alt="玉龙VPN Logo" />
     </div>
   );
 }
@@ -413,7 +406,7 @@ export default function App() {
           <BrandLogo url={logoUrl} compact />
           <div>
             <strong>玉龙VPN</strong>
-            <span>Windows 1.0.1</span>
+            <span>Windows 1.0.2</span>
           </div>
         </div>
 
