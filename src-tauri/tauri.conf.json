@@ -27,7 +27,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
     "publisher": "Yulong VPN",
     "category": "Utility",
     "shortDescription": "玉龙VPN Windows 客户端",

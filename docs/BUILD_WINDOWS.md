@@ -1,5 +1,7 @@
 # Windows EXE 打包教程
 
+> CI smoke trigger: windows client initial build.
+
 ## 1. 最简单方式：GitHub Actions
 
 进入仓库：
