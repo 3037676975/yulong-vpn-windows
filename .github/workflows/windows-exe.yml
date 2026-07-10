@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows Functional EXE
 
 on:
   workflow_dispatch:
@@ -22,8 +22,9 @@ on:
 
 jobs:
   build-windows:
-    name: Build Yulong VPN Windows EXE
+    name: Build and self-check Yulong VPN Windows
     runs-on: windows-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -32,16 +33,52 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Generate Windows icon
         shell: pwsh
         run: |
           python scripts/create_windows_icon.py 2>&1 | Tee-Object -FilePath icon-generate.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Download and validate official mihomo core
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/download_mihomo.ps1 2>&1 | Tee-Object -FilePath mihomo-download.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $core = Get-Item src-tauri/resources/mihomo.exe
+          if ($core.Length -lt 5MB) { throw "mihomo.exe is too small" }
+          & $core.FullName -v 2>&1 | Tee-Object -FilePath mihomo-version.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Public backend smoke check
+        shell: pwsh
+        run: |
+          $noticeText = curl.exe -fsS --connect-timeout 10 --max-time 20 "https://api2.smilechat.cn/api/notices?public=1"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($noticeText)) {
+            throw "Public notice API is unavailable"
+          }
+          $noticeText | Set-Content backend-notice.json -Encoding UTF8
+          $noticeText | ConvertFrom-Json | Out-Null
+
+          $invalidBody = '{"code":"__windows_ci_invalid__","clientId":"windows-ci","pluginVersion":"windows-v1-functional"}'
+          $authText = curl.exe -sS --connect-timeout 10 --max-time 20 -H "content-type: application/json" -d $invalidBody "https://api2.smilechat.cn/api/access-code"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($authText)) {
+            throw "Access-code API is unavailable"
+          }
+          $authText | Set-Content backend-invalid-auth.json -Encoding UTF8
+          $auth = $authText | ConvertFrom-Json
+          if ($auth.ok -eq $true) {
+            throw "Backend unexpectedly accepted the CI invalid password"
+          }
+          "backend smoke check passed" | Set-Content backend-smoke.log -Encoding UTF8
 
       - name: Install frontend dependencies
         shell: pwsh
@@ -55,11 +92,22 @@ jobs:
           npm run build 2>&1 | Tee-Object -FilePath frontend-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Rust format check
+        shell: pwsh
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check 2>&1 | Tee-Object -FilePath rust-fmt.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Rust unit tests
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath rust-test.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Rust compile check
         shell: pwsh
         run: |
-          cd src-tauri
-          cargo check 2>&1 | Tee-Object -FilePath ../rust-check.log
+          cargo check --manifest-path src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath rust-check.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Windows installer
@@ -68,24 +116,63 @@ jobs:
           npm run tauri:build 2>&1 | Tee-Object -FilePath tauri-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload build logs
+      - name: Validate installer and bundled core
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not generated" }
+          if ($installer.Length -lt 8MB) {
+            throw "Installer is unexpectedly small and may not contain mihomo: $($installer.Length) bytes"
+          }
+          $core = Get-Item src-tauri/resources/mihomo.exe
+          $summary = @(
+            "installer=$($installer.FullName)",
+            "installer_bytes=$($installer.Length)",
+            "core_bytes=$($core.Length)",
+            "core_sha256=$((Get-FileHash $core.FullName -Algorithm SHA256).Hash)",
+            "installer_sha256=$((Get-FileHash $installer.FullName -Algorithm SHA256).Hash)"
+          )
+          $summary | Set-Content package-validation.log -Encoding UTF8
+          $summary | ForEach-Object { Write-Host $_ }
+
+      - name: Launch application smoke test
+        shell: pwsh
+        run: |
+          $app = Get-Item src-tauri/target/release/yulong-vpn-windows.exe
+          $process = Start-Process -FilePath $app.FullName -PassThru
+          Start-Sleep -Seconds 10
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "Application exited during startup smoke test with code $($process.ExitCode)"
+          }
+          "application process stayed alive for 10 seconds; pid=$($process.Id)" | Set-Content app-launch-smoke.log -Encoding UTF8
+          Stop-Process -Id $process.Id -Force
+
+      - name: Upload build and self-check logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: YulongVPN-Windows-Build-Logs
+          name: YulongVPN-Windows-Functional-Logs
           path: |
             icon-generate.log
+            mihomo-download.log
+            mihomo-version.log
+            backend-notice.json
+            backend-invalid-auth.json
+            backend-smoke.log
             npm-install.log
             frontend-build.log
+            rust-fmt.log
+            rust-test.log
             rust-check.log
             tauri-build.log
+            package-validation.log
+            app-launch-smoke.log
           if-no-files-found: ignore
 
-      - name: Upload Windows bundle
+      - name: Upload functional Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: YulongVPN-Windows-Bundle
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+          name: YulongVPN-Windows-v1.0.0-Functional
+          path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
