@@ -320,6 +320,18 @@ button:disabled { cursor: wait; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 20px;
+}
+
+.top-feedback {
+  min-width: 0;
+  max-width: 42%;
+  margin: 0;
+  color: #5c847b;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .top-actions {
@@ -401,6 +413,7 @@ button:disabled { cursor: wait; }
 
 .button-row {
   display: flex;
+  align-items: center;
   gap: 12px;
   margin-top: 25px;
 }
