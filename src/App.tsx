@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
 import yulongLogo from '../src-tauri/icons/icon.ico';
@@ -100,6 +100,8 @@ export default function App() {
   const [coreVersion, setCoreVersion] = useState<string | null>(null);
   const [selfCheckOk, setSelfCheckOk] = useState(false);
   const [busyNode, setBusyNode] = useState<string | null>(null);
+  const nodeCardRef = useRef<HTMLDivElement>(null);
+  const [activeView, setActiveView] = useState<'console' | 'nodes'>('console');
 
   const statusText = useMemo(() => {
     switch (status) {
@@ -296,6 +298,10 @@ export default function App() {
   }
 
   async function disconnect() {
+    if (status === 'ready' || status === 'disconnected') {
+      setMessage('当前已经是断开状态');
+      return;
+    }
     setMessage('正在关闭系统代理和代理核心…');
     try {
       const res = await invoke<ConnectResponse>('disconnect_proxy');
@@ -406,14 +412,25 @@ export default function App() {
           <BrandLogo url={logoUrl} compact />
           <div>
             <strong>玉龙VPN</strong>
-            <span>Windows 1.0.3</span>
+            <span>Windows 1.0.4</span>
           </div>
         </div>
 
         <nav>
-          <button className="nav-active">连接控制台</button>
-          <button onClick={() => document.querySelector('.node-card')?.scrollIntoView({ behavior: 'smooth' })}>节点列表</button>
-          <button onClick={refreshState}>刷新状态</button>
+          <button className={activeView === 'console' ? 'nav-active' : ''} onClick={() => {
+            setActiveView('console');
+            document.querySelector('.topbar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setMessage('已返回连接控制台');
+          }}>连接控制台</button>
+          <button className={activeView === 'nodes' ? 'nav-active' : ''} onClick={() => {
+            setActiveView('nodes');
+            nodeCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setMessage('已定位到节点列表，点击节点名称即可切换');
+          }}>节点列表</button>
+          <button onClick={async () => {
+            await refreshState();
+            setMessage('状态已刷新');
+          }}>刷新状态</button>
           <button className="logout-nav" onClick={logout}>退出登录</button>
         </nav>
 
@@ -429,6 +446,7 @@ export default function App() {
             <p className="muted">当前状态</p>
             <h2>{statusText}</h2>
           </div>
+          <p className="top-feedback" title={message}>{message}</p>
           <div className="top-actions">
             <span className="current-node-pill">{currentNode || '自动选择'}</span>
             <div className={`status-dot ${status}`} />
@@ -442,9 +460,9 @@ export default function App() {
             <p>{message}</p>
             <div className="button-row">
               <button className="primary" onClick={connect} disabled={status === 'connecting' || status === 'connected'}>
-                {status === 'connecting' ? '连接中…' : '一键连接'}
+                {status === 'connecting' ? '连接中…' : status === 'connected' ? '已连接' : '一键连接'}
               </button>
-              <button className="ghost" onClick={disconnect}>一键断开</button>
+              <button className="ghost" onClick={disconnect} disabled={status === 'ready' || status === 'disconnected'}>一键断开</button>
             </div>
           </div>
 
@@ -478,7 +496,7 @@ export default function App() {
             <p className="config-time">上次更新：{formatUpdatedAt(configUpdatedAt)}</p>
           </div>
 
-          <div className="card glass node-card">
+          <div className="card glass node-card" ref={nodeCardRef}>
             <div className="node-head">
               <div>
                 <p className="muted">节点列表</p>

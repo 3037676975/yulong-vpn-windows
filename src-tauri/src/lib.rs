@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -356,7 +358,7 @@ async fn verify_access_code(code: &str) -> AuthResult {
         .json(&serde_json::json!({
             "code": code,
             "clientId": "windows",
-            "pluginVersion": "windows-v1.0.3"
+            "pluginVersion": "windows-v1.0.4"
         }))
         .timeout(Duration::from_secs(12))
         .send()
