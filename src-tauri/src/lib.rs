@@ -356,7 +356,7 @@ async fn verify_access_code(code: &str) -> AuthResult {
         .json(&serde_json::json!({
             "code": code,
             "clientId": "windows",
-            "pluginVersion": "windows-v1.0.2"
+            "pluginVersion": "windows-v1.0.3"
         }))
         .timeout(Duration::from_secs(12))
         .send()
@@ -637,6 +637,34 @@ fn bundled_core_path(app: &AppHandle) -> Result<PathBuf, String> {
         .ok_or_else(|| "安装包中缺少 mihomo.exe 代理核心".to_string())
 }
 
+fn bundled_resource_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|err| format!("无法定位程序资源目录：{err}"))?;
+    [resource_dir.join("resources").join(name), resource_dir.join(name)]
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| format!("安装包中缺少 {name}"))
+}
+
+fn ensure_geodata(app: &AppHandle) -> Result<(), String> {
+    for name in ["geoip.metadb", "geosite.dat"] {
+        let source = bundled_resource_path(app, name)?;
+        let target = app_data_dir()?.join(name);
+        let should_copy = match (fs::metadata(&source), fs::metadata(&target)) {
+            (Ok(source_meta), Ok(target_meta)) => source_meta.len() != target_meta.len(),
+            (Ok(_), Err(_)) => true,
+            _ => true,
+        };
+        if should_copy {
+            fs::copy(&source, &target)
+                .map_err(|err| format!("安装离线规则数据 {name} 失败：{err}"))?;
+        }
+    }
+    Ok(())
+}
+
 fn ensure_core(app: &AppHandle) -> Result<PathBuf, String> {
     let source = bundled_core_path(app)?;
     let target = core_path()?;
@@ -710,6 +738,7 @@ fn stop_core() {
 fn start_core(app: &AppHandle) -> Result<(), String> {
     stop_core();
     let executable = ensure_core(app)?;
+    ensure_geodata(app)?;
     let config = config_path()?;
     if !config.is_file() {
         return Err("尚未下载代理配置".to_string());
