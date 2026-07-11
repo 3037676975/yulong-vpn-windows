@@ -358,7 +358,7 @@ async fn verify_access_code(code: &str) -> AuthResult {
         .json(&serde_json::json!({
             "code": code,
             "clientId": "windows",
-            "pluginVersion": "windows-v1.0.4"
+            "pluginVersion": "windows-v1.0.5"
         }))
         .timeout(Duration::from_secs(12))
         .send()
@@ -884,8 +884,48 @@ async fn connect_internal(app: AppHandle) -> Result<ConnectResponse, String> {
     })
 }
 
+async fn resolve_controller_group(target: Option<&str>) -> Option<String> {
+    let preferred = ACTIVE_GROUP.lock().ok().and_then(|value| value.clone());
+    let value: JsonValue = reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{CONTROLLER_PORT}/proxies"))
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let proxies = value.get("proxies")?.as_object()?;
+
+    if let Some(name) = preferred.as_deref() {
+        if proxies.contains_key(name) {
+            return Some(name.to_string());
+        }
+    }
+
+    let selected = proxies.iter().find(|(_, proxy)| {
+        let kind = proxy
+            .get("type")
+            .and_then(JsonValue::as_str)
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let is_selector = kind == "selector" || kind == "select";
+        let contains_target = target
+            .map(|wanted| {
+                proxy
+                    .get("all")
+                    .and_then(JsonValue::as_array)
+                    .map(|all| all.iter().any(|item| item.as_str() == Some(wanted)))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(true);
+        is_selector && contains_target
+    })?;
+    Some(selected.0.clone())
+}
+
 async fn controller_current_node() -> Option<String> {
-    let group = ACTIVE_GROUP.lock().ok().and_then(|value| value.clone())?;
+    let group = resolve_controller_group(None).await?;
     let mut url = reqwest::Url::parse(&format!(
         "http://127.0.0.1:{CONTROLLER_PORT}/proxies/"
     ))
@@ -1140,12 +1180,6 @@ async fn select_node(node: String) -> Result<NodeSelectionResponse, String> {
     if !core_is_running() || !wait_for_port(CONTROLLER_PORT, 2).await {
         return Err("请先连接代理".to_string());
     }
-    let group = ACTIVE_GROUP
-        .lock()
-        .ok()
-        .and_then(|value| value.clone())
-        .ok_or_else(|| "当前配置由自动策略管理，不支持手动切换".to_string())?;
-
     let target = if node == "自动选择" {
         AUTO_TARGET
             .lock()
@@ -1155,6 +1189,10 @@ async fn select_node(node: String) -> Result<NodeSelectionResponse, String> {
     } else {
         node.clone()
     };
+
+    let group = resolve_controller_group(Some(&target))
+        .await
+        .ok_or_else(|| "没有找到可切换的 mihomo 策略组".to_string())?;
 
     let mut url = reqwest::Url::parse(&format!(
         "http://127.0.0.1:{CONTROLLER_PORT}/proxies/"
@@ -1171,7 +1209,8 @@ async fn select_node(node: String) -> Result<NodeSelectionResponse, String> {
         .await
         .map_err(|err| format!("切换节点失败：{err}"))?;
     if !response.status().is_success() {
-        return Err(format!("切换节点失败（HTTP {}）", response.status()));
+        let status = response.status();
+        return Err(format!("切换节点失败（HTTP {status}，策略组：{group}）"));
     }
 
     if let Ok(mut current) = CURRENT_NODE.lock() {

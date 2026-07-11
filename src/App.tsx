@@ -234,7 +234,7 @@ export default function App() {
           setSystemProxy(false);
           setMessage('网络异常，已暂停代理，恢复网络后会继续验证');
         } else {
-          forceLogout('后台密码已修改或账号已失效，请重新登录');
+          forceLogout('后台密码已修改，代理已关闭，正在返回登录页…');
         }
       } catch (err) {
         setStatus('error');
@@ -412,7 +412,7 @@ export default function App() {
           <BrandLogo url={logoUrl} compact />
           <div>
             <strong>玉龙VPN</strong>
-            <span>Windows 1.0.4</span>
+            <span>Windows 1.0.5</span>
           </div>
         </div>
 
