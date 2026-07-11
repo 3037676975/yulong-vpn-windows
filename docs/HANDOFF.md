@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-本仓库已经完成 Tauri + React + Rust 的 Windows v1.0.6 功能版。
+本仓库已经完成 Tauri + React + Rust 的 Windows v1.0.7 功能版。
 
 已完成：
 

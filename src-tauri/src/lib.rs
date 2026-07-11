@@ -358,7 +358,7 @@ async fn verify_access_code(code: &str) -> AuthResult {
         .json(&serde_json::json!({
             "code": code,
             "clientId": "windows",
-            "pluginVersion": "windows-v1.0.6"
+            "pluginVersion": "windows-v1.0.7"
         }))
         .timeout(Duration::from_secs(12))
         .send()
@@ -1297,10 +1297,12 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+        .on_window_event(|_window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                // Closing the main window must really terminate the client.
+                // Hiding it here left an invisible/blank WebView instance
+                // alive; restarting then appeared as a second black window.
+                disconnect_internal();
             }
         })
         .setup(|app| {

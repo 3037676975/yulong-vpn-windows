@@ -91,7 +91,7 @@ Content-Type: application/json
 {
   "code": "888777",
   "clientId": "windows",
-  "pluginVersion": "windows-v1.0.6"
+  "pluginVersion": "windows-v1.0.7"
 }
 ```
 
@@ -204,7 +204,7 @@ Build Windows Functional EXE
 Run workflow
 ```
 
-成功后在 Releases 长期下载 `YulongVPN-Windows-v1.0.6-Setup.exe`。
+成功后在 Releases 长期下载 `YulongVPN-Windows-v1.0.7-Setup.exe`。
 
 ---
 
@@ -287,7 +287,7 @@ Windows 系统代理 / mihomo core
 
 ## 11. 当前交接说明
 
-这个仓库当前已经完成 Windows v1.0.6 系统代理功能版。后续重点：
+这个仓库当前已经完成 Windows v1.0.7 系统代理功能版。后续重点：
 
 ```text
 1. Windows 10 / 11 真机安装与连接回归

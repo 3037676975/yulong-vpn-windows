@@ -1,6 +1,6 @@
 [package]
 name = "yulong-vpn-windows"
-version = "1.0.6"
+version = "1.0.7"
 description = "Yulong VPN Windows Client"
 authors = ["Yulong VPN"]
 edition = "2021"
