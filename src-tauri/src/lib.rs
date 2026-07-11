@@ -358,7 +358,7 @@ async fn verify_access_code(code: &str) -> AuthResult {
         .json(&serde_json::json!({
             "code": code,
             "clientId": "windows",
-            "pluginVersion": "windows-v1.0.5"
+            "pluginVersion": "windows-v1.0.6"
         }))
         .timeout(Duration::from_secs(12))
         .send()
@@ -897,20 +897,16 @@ async fn resolve_controller_group(target: Option<&str>) -> Option<String> {
         .ok()?;
     let proxies = value.get("proxies")?.as_object()?;
 
-    if let Some(name) = preferred.as_deref() {
-        if proxies.contains_key(name) {
-            return Some(name.to_string());
-        }
-    }
-
-    let selected = proxies.iter().find(|(_, proxy)| {
+    let is_selector = |proxy: &JsonValue| {
         let kind = proxy
             .get("type")
             .and_then(JsonValue::as_str)
             .unwrap_or_default()
             .to_ascii_lowercase();
-        let is_selector = kind == "selector" || kind == "select";
-        let contains_target = target
+        kind == "selector" || kind == "select"
+    };
+    let contains_target = |proxy: &JsonValue| {
+        target
             .map(|wanted| {
                 proxy
                     .get("all")
@@ -918,9 +914,18 @@ async fn resolve_controller_group(target: Option<&str>) -> Option<String> {
                     .map(|all| all.iter().any(|item| item.as_str() == Some(wanted)))
                     .unwrap_or(false)
             })
-            .unwrap_or(true);
-        is_selector && contains_target
-    })?;
+            .unwrap_or(true)
+    };
+
+    let selected = proxies
+        .iter()
+        .find(|(name, proxy)| {
+            is_selector(proxy)
+                && contains_target(proxy)
+                && preferred.as_deref().map(|wanted| wanted == *name).unwrap_or(false)
+        })
+        .or_else(|| proxies.iter().find(|(_, proxy)| is_selector(proxy) && contains_target(proxy)))
+        .or_else(|| proxies.iter().find(|(_, proxy)| is_selector(proxy)))?;
     Some(selected.0.clone())
 }
 
@@ -1281,6 +1286,12 @@ async fn self_check(app: AppHandle) -> Result<SelfCheckResponse, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let application = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,

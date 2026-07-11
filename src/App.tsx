@@ -412,7 +412,7 @@ export default function App() {
           <BrandLogo url={logoUrl} compact />
           <div>
             <strong>玉龙VPN</strong>
-            <span>Windows 1.0.5</span>
+            <span>Windows 1.0.6</span>
           </div>
         </div>
 
