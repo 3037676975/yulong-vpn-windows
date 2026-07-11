@@ -33,7 +33,7 @@ Run workflow
 成功后可在 Releases 长期下载：
 
 ```text
-YulongVPN-Windows-v1.0.6-Setup.exe
+YulongVPN-Windows-v1.0.7-Setup.exe
 ```
 
 里面会包含 Windows 安装包。
